@@ -8,9 +8,9 @@
 #include <trajectory_msgs/msg/joint_trajectory.h>
 #include <trajectory_msgs/msg/joint_trajectory_point.h>
 
-char ssid[] = "Your_SSID"; // Please set your WiFi SSID
-char password[] = "Your_PASSWORD"; // Please set your WiFi Password
-IPAddress agent_ip = IPAddress(192, 168, 1, 100); // Please set your micro-ROS agent IP address
+char ssid[] = "POCO F5"; // Please set your WiFi SSID
+char password[] = "0908190517"; // Please set your WiFi Password
+IPAddress agent_ip = IPAddress(192,168,120,69); // Please set your micro-ROS agent IP address
 int agent_port = 8888;
 
 #define NUM_SERVOS 12
@@ -21,6 +21,9 @@ HardwareSerial BusSerial(2);
 #define HDR      0x55
 #define CMD_MOVE 0x01
 #define CMD_LOAD 0x1F
+
+// 在现有定义后添加
+#define CMD_SERVO_MOTOR_MODE 0x1D  // 29
 
 uint8_t calcCHK(const uint8_t *b) {
   uint16_t s = 0;
@@ -37,6 +40,18 @@ void sendPack(uint8_t id, uint8_t cmd, const uint8_t *p, uint8_t n) {
   for (uint8_t i = 0; i < n; i++) buf[5 + i] = p[i];
   buf[5 + n] = calcCHK(buf);
   BusSerial.write(buf, 6 + n);
+}
+
+// 设置servo为motor模式
+void setMotorMode(uint8_t id, bool enable_motor_mode, int16_t speed = 1000) {
+  uint8_t mode = enable_motor_mode ? 1 : 0;
+  uint8_t p[4] = {
+    mode,                    // 参数1: 模式 (0=servo, 1=motor)
+    0,                       // 参数2: null
+    (uint8_t)(speed & 0xFF), // 参数3: 速度低位
+    (uint8_t)(speed >> 8)    // 参数4: 速度高位 (-1000~1000)
+  };
+  sendPack(id, CMD_SERVO_MOTOR_MODE, p, 4);
 }
 
 void enableTorque(uint8_t id) {
@@ -207,6 +222,11 @@ void setup() {
   );
   
   Serial.println("Setup complete, ready to receive trajectory commands");
+
+  Serial.println("Setting servo ID 3 to motor mode...");
+    setMotorMode(3, true, 1000);  // 启用motor模式，初始速度为0
+    delay(100);
+    Serial.println("Servo ID 3 is now in motor mode");
 }
 
 void loop() {
