@@ -1,28 +1,14 @@
 #include <Arduino.h>
-#include <WiFi.h>
-#include <micro_ros_utils.hpp>
-#include <rcl/rcl.h>
-#include <rclc/rclc.h>
-#include <rclc/executor.h>
-#include <rosidl_runtime_c/string_functions.h>
-#include <trajectory_msgs/msg/joint_trajectory.h>
-#include <trajectory_msgs/msg/joint_trajectory_point.h>
-
-char ssid[] = "POCO F5"; // Please set your WiFi SSID
-char password[] = "0908190517"; // Please set your WiFi Password
-IPAddress agent_ip = IPAddress(192,168,120,69); // Please set your micro-ROS agent IP address
-int agent_port = 8888;
 
 #define NUM_SERVOS 12
 
 #define RX_PIN 18
 #define TX_PIN 19
 HardwareSerial BusSerial(2);
+
 #define HDR      0x55
 #define CMD_MOVE 0x01
 #define CMD_LOAD 0x1F
-
-// 在现有定义后添加
 #define CMD_SERVO_MOTOR_MODE 0x1D  // 29
 
 uint8_t calcCHK(const uint8_t *b) {
@@ -42,14 +28,14 @@ void sendPack(uint8_t id, uint8_t cmd, const uint8_t *p, uint8_t n) {
   BusSerial.write(buf, 6 + n);
 }
 
-// 设置servo为motor模式
-void setMotorMode(uint8_t id, bool enable_motor_mode, int16_t speed = 1000) {
+// 設置servo為motor模式
+void setMotorMode(uint8_t id, bool enable_motor_mode, int16_t speed = 0) {
   uint8_t mode = enable_motor_mode ? 1 : 0;
   uint8_t p[4] = {
-    mode,                    // 参数1: 模式 (0=servo, 1=motor)
-    0,                       // 参数2: null
-    (uint8_t)(speed & 0xFF), // 参数3: 速度低位
-    (uint8_t)(speed >> 8)    // 参数4: 速度高位 (-1000~1000)
+    mode,                    // 參數1: 模式 (0=servo, 1=motor)
+    0,                       // 參數2: null
+    (uint8_t)(speed & 0xFF), // 參數3: 速度低位
+    (uint8_t)(speed >> 8)    // 參數4: 速度高位 (-1000~1000)
   };
   sendPack(id, CMD_SERVO_MOTOR_MODE, p, 4);
 }
@@ -59,181 +45,72 @@ void enableTorque(uint8_t id) {
   sendPack(id, CMD_LOAD, &on, 1);
 }
 
-void moveServoDeg(uint8_t id, float deg) {
-  deg = constrain(deg, 0.0f, 240.0f);
-  uint16_t pos = (uint16_t)(deg / 240.0f * 1000.0f);
-  uint8_t p[4] = {
-    (uint8_t)(pos & 0xFF),
-    (uint8_t)(pos >> 8),
-    0x64, 0x00 
-  };
-  sendPack(id, CMD_MOVE, p, 4);
-}
-
-void connectToWiFi() {
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.print(".");
-  }
-  
-  Serial.println();
-  Serial.print("Connected to WiFi network with IP Address: ");
-  Serial.println(WiFi.localIP());
-}
-
-rcl_subscription_t         subscription;
-rclc_executor_t            executor;
-rcl_node_t                 node;
-rclc_support_t             support;
-rcl_allocator_t            allocator;
-trajectory_msgs__msg__JointTrajectory traj_msg;
-
-void traj_callback(const void * msgin) {
-  Serial.println("=== Trajectory Callback Triggered ===");
-  
-  auto *t = (const trajectory_msgs__msg__JointTrajectory *)msgin;
-  
-  Serial.printf("Joint names count: %u\n", (unsigned)t->joint_names.size);
-  for (size_t i = 0; i < t->joint_names.size && i < 5; i++) {
-    Serial.printf("Joint[%u]: %s\n", (unsigned)i, t->joint_names.data[i].data);
-  }
-  
-  Serial.printf("Points count: %u\n", (unsigned)t->points.size);
-  
-  if (t->points.size == 0) {
-    Serial.println("WARNING: No trajectory points received!");
-    return;
-  }
-  
-  auto &pt = t->points.data[0];
-  size_t n = pt.positions.size < NUM_SERVOS ? pt.positions.size : NUM_SERVOS;
-  Serial.printf("Point 0 has %u positions (will use %u)\n", (unsigned)pt.positions.size, (unsigned)n);
-  
-  for (size_t i = 0; i < n; i++) {
-    float angle = (float)pt.positions.data[i];
-    Serial.printf("Moving servo %u to %.2f degrees\n", (unsigned)(i + 1), angle);
-    moveServoDeg(i + 1, angle);
-    delay(10);
-  }
-  
-  Serial.println("=== Callback Complete ===");
+// 控制馬達速度 (-1000 到 1000)
+void setMotorSpeed(uint8_t id, int16_t speed) {
+  speed = constrain(speed, -1000, 1000);
+  setMotorMode(id, true, speed);
 }
 
 void setup() {
   Serial.begin(115200);
   delay(2000);
   
-  connectToWiFi();
-  
+  // 初始化串列通訊
   BusSerial.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);
+  
+  // 啟動所有馬達的扭力輸出
   for (uint8_t id = 1; id <= NUM_SERVOS; id++) {
     enableTorque(id);
     delay(20);
   }
   delay(200);
   
-  Serial.printf("Setting up micro-ROS WiFi transport to %s:%d\n", agent_ip.toString().c_str(), agent_port);
-  
-  if (strlen(agent_ip.toString().c_str()) == 0) {
-    Serial.println("ERROR: agent_ip is empty! Please set the correct IP address.");
-    while(1) delay(1000);
-  }
-  
-  set_microros_wifi_transports(ssid, password, agent_ip, agent_port);
-  
-  delay(2000);
-  
-  allocator = rcl_get_default_allocator();
-  
-  Serial.println("Attempting to connect to micro-ROS agent...");
-  rcl_ret_t ret;
-  int retry_count = 0;
-  const int max_retries = 10;
-  
-  do {
-    ret = rclc_support_init(&support, 0, NULL, &allocator);
-    if (ret != RCL_RET_OK) {
-      retry_count++;
-      Serial.printf("Connection attempt %d/%d failed, retrying in 2 seconds...\n", retry_count, max_retries);
-      delay(2000);
-    }
-  } while (ret != RCL_RET_OK && retry_count < max_retries);
-  
-  if (ret != RCL_RET_OK) {
-    Serial.printf("Failed to initialize micro-ROS support after %d attempts\n", max_retries);
-    Serial.println("Check network connectivity and agent status");
-    while(1) {
-      delay(5000);
-      Serial.println("Retrying connection...");
-      if (rclc_support_init(&support, 0, NULL, &allocator) == RCL_RET_OK) {
-        Serial.println("Connection established!");
-        break;
-      }
-    }
-  }
-  
-  ret = rclc_node_init_default(&node, "servo_node", "", &support);
-  if (ret != RCL_RET_OK) {
-    Serial.println("Failed to initialize micro-ROS node");
-    while(1) {
-      delay(1000);
-    }
-  }
-  
-  Serial.println("micro-ROS node initialized successfully");
-  
-  trajectory_msgs__msg__JointTrajectory__init(&traj_msg);
-  
-  rosidl_runtime_c__String__Sequence__init(&traj_msg.joint_names, NUM_SERVOS);
-  char tmp[16];
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    sprintf(tmp, "servo_%u", i + 1);
-    rosidl_runtime_c__String__assign(&traj_msg.joint_names.data[i], tmp);
-  }
-  
-  trajectory_msgs__msg__JointTrajectoryPoint__Sequence__init(&traj_msg.points, 1);
-  traj_msg.points.data[0].positions.data =
-    (double *)malloc(NUM_SERVOS * sizeof(double));
-  traj_msg.points.data[0].positions.size =
-    traj_msg.points.data[0].positions.capacity = NUM_SERVOS;
-  traj_msg.points.data[0].time_from_start.sec = 0;
-  traj_msg.points.data[0].time_from_start.nanosec = 0;
-  
-  ret = rclc_subscription_init_default(
-    &subscription, &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(trajectory_msgs, msg, JointTrajectory),
-    "/servo_trajectory"
-  );
-  
-  if (ret != RCL_RET_OK) {
-    Serial.println("Failed to initialize subscription");
-    while(1) {
-      delay(1000);
-    }
-  }
-  
-  rclc_executor_init(&executor, &support.context, 1, &allocator);
-  rclc_executor_add_subscription(
-    &executor, &subscription, &traj_msg,
-    traj_callback, ON_NEW_DATA
-  );
-  
-  Serial.println("Setup complete, ready to receive trajectory commands");
-
+  // 設定第3號馬達為馬達模式
   Serial.println("Setting servo ID 3 to motor mode...");
-    setMotorMode(3, true, 1000);  // 启用motor模式，初始速度为0
-    delay(100);
-    Serial.println("Servo ID 3 is now in motor mode");
+  setMotorMode(3, true, 0);  // 啟用motor模式，初始速度為0
+  delay(100);
+  Serial.println("Servo ID 3 is now in motor mode");
+  
+  Serial.println("Setup complete!");
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi disconnected, attempting to reconnect...");
-    connectToWiFi();
-  }
+  // 範例：讓第3號馬達以不同速度旋轉
   
-  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+  Serial.println("Motor forward at speed 500");
+  setMotorSpeed(3, 500);   // 正向旋轉
+  setMotorSpeed(1, 500);
+  delay(3000);
+  
+  Serial.println("Motor stop");
+  setMotorSpeed(3, 0);     // 停止
+  setMotorSpeed(1, 0);
+  delay(1000);
+  
+  Serial.println("Motor backward at speed -300");
+  setMotorSpeed(3, -300);  // 反向旋轉
+  setMotorSpeed(1, -300);
+  delay(3000);
+  
+  Serial.println("Motor stop");
+  setMotorSpeed(3, 0);     // 停止
+  setMotorSpeed(1, 0);
+  delay(1000);
+  
+  // 你可以透過序列埠監控器輸入指令來控制
+  if (Serial.available()) {
+    String input = Serial.readString();
+    input.trim();
+    
+    if (input.startsWith("speed")) {
+      int speed = input.substring(5).toInt();
+      speed = constrain(speed, -1000, 1000);
+      Serial.printf("Setting motor speed to: %d\n", speed);
+      setMotorSpeed(3, speed);
+    }
+    else if (input == "stop") {
+      Serial.println("Stopping motor");
+      setMotorSpeed(3, 0);
+    }
+  }
 }
