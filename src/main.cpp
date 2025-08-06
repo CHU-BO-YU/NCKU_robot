@@ -207,11 +207,6 @@ void setup() {
   );
   
   Serial.println("Setup complete, ready to receive trajectory commands");
-
-  Serial.println("Setting servo ID 3 to motor mode...");
-    setMotorMode(3, true, 1000);  // 启用motor模式，初始速度为0
-    delay(100);
-    Serial.println("Servo ID 3 is now in motor mode");
 }
 
 void loop() {
