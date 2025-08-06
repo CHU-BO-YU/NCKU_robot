@@ -26,19 +26,25 @@ class ServoTrajectoryPublisher(Node):
     def run_menu(self):
         try:
             while rclpy.ok():
-                choice = input(f'\n選擇要控制哪顆舵機 (1–{NUM_SERVOS}, q = 離開)：').strip()
-                if choice.lower() == 'q':
+                s = input(f'\n選擇要控制哪些舵機（逗號分隔，1–{NUM_SERVOS}，q = 離開）：').strip()
+                if s.lower() == 'q':
                     break
-                if not choice.isdigit() or not (1 <= int(choice) <= NUM_SERVOS):
-                    print(f'輸入錯誤，請輸入 1 到 {NUM_SERVOS} 或 q。')
+                try:
+                    ids = [int(x) - 1 for x in s.split(',') if x.strip().isdigit()]
+                except ValueError:
+                    print("格式錯誤，請用逗號分隔有效編號。")
                     continue
-                idx = int(choice) - 1
-                self.angle_menu(idx)
+                ids = [i for i in ids if 0 <= i < NUM_SERVOS]
+                if not ids:
+                    print(f"沒有有效編號，請輸入 1 到 {NUM_SERVOS}。")
+                    continue
+                self.angle_menu(ids)
         except (KeyboardInterrupt, EOFError):
             pass
 
-    def angle_menu(self, idx: int):
-        prompt = f'Servo {idx+1} 角度 (0–240) 或 b 返回：'
+    def angle_menu(self, indices: List[int]):
+        ids_str = ", ".join(str(i+1) for i in indices)
+        prompt = f'為 舵機 {ids_str} 一次設定相同角度（0–240），或輸入 b 返回：'
         while rclpy.ok():
             inp = input(prompt).strip()
             if inp.lower() == 'b':
@@ -48,11 +54,12 @@ class ServoTrajectoryPublisher(Node):
                 if not 0.0 <= ang <= 240.0:
                     raise ValueError
             except ValueError:
-                print('角度範圍錯誤，請輸入 0 到 240 之間，或 b 返回。')
+                print('角度範圍錯誤，請輸入 0–240 之間，或 b 返回。')
                 continue
-
-            self.positions[idx] = ang
+            for idx in indices:
+                self.positions[idx] = ang
             self.publish_joint_trajectory()
+            return
 
 def main(args=None):
     rclpy.init(args=args)
