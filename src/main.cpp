@@ -123,14 +123,30 @@ void traj_callback(const void * msgin) {
     delay(10);
   }
 
-  delay(100);
-  setMotorSpeed(2, 1000);
+  // 等待servo移動完成
+  delay(500);
+  
+  // 步驟2: 切換到Motor模式旋轉
+  Serial.println("Step 2: Motor mode rotation");
+  setMotorSpeed(2, 1000);  // 內部會切換到motor模式
   setMotorSpeed(6, -1000);
   delay(500);
+  
+  // 停止motor
   setMotorSpeed(2, 0);
   setMotorSpeed(6, 0);
-  delay(10);
+  delay(100);
   
+  // 步驟3: 切換回Servo模式定位
+  Serial.println("Step 3: Final servo positioning");
+  setMotorMode(2, false);  // 明確切換回servo模式
+  setMotorMode(6, false);
+  delay(50);
+  
+  moveServoDeg(2, 0);    // 修正：統一使用ID2,6
+  moveServoDeg(6, 240);
+  delay(10);
+
   Serial.println("=== Callback Complete ===");
 }
 

@@ -10,7 +10,7 @@ class ServoTrajectoryPublisher(Node):
     def __init__(self):
         super().__init__('servo_trajectory_publisher')
         self.pub = self.create_publisher(JointTrajectory, '/servo_trajectory', 10)
-        self.positions = [90.0] * NUM_SERVOS
+        self.positions = [0.0] * NUM_SERVOS
         self.get_logger().info(f'輸入 q 離開；可控制 1–{NUM_SERVOS} 號舵機')
 
     def publish_joint_trajectory(self):
@@ -79,8 +79,8 @@ class ServoTrajectoryPublisher(Node):
                 print('❌ 輸入錯誤，請輸入 0–240 角度，或 b/u/j 等指令。')
                 continue
 
-            for idx in indices:
-                self.positions[idx] = ang
+            for i, idx in enumerate(indices):
+                self.positions[idx] = ang if i == 0 else 240.0 - ang
             self.publish_joint_trajectory()
             return
 
