@@ -9,7 +9,7 @@
 #include <trajectory_msgs/msg/joint_trajectory_point.h>
 
 char ssid[] = "POCO F5"; // Please set your WiFi SSID
-char password[] = "0908190517"; // Please set your WiFi Password
+char password[] = "0908190517"; //  Please set your WiFi Password
 IPAddress agent_ip = IPAddress(192,168,120,69); // Please set your micro-ROS agent IP address
 int agent_port = 8888;
 

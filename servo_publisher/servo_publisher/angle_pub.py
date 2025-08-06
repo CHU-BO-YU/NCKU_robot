@@ -2,6 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+from typing import List
 
 NUM_SERVOS = 12
 
