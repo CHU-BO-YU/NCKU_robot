@@ -96,27 +96,42 @@ rcl_allocator_t            allocator;
 trajectory_msgs__msg__JointTrajectory traj_msg;
 
 void traj_callback(const void * msgin) {
-  Serial.println("=== Trajectory Callback: Continuous Rotation Mode ===");
-
+  Serial.println("=== Trajectory Callback Triggered ===");
+  
   auto *t = (const trajectory_msgs__msg__JointTrajectory *)msgin;
+  
+  Serial.printf("Joint names count: %u\n", (unsigned)t->joint_names.size);
+  for (size_t i = 0; i < t->joint_names.size && i < 5; i++) {
+    Serial.printf("Joint[%u]: %s\n", (unsigned)i, t->joint_names.data[i].data);
+  }
+  
+  Serial.printf("Points count: %u\n", (unsigned)t->points.size);
+  
   if (t->points.size == 0) {
     Serial.println("WARNING: No trajectory points received!");
     return;
   }
-
+  
   auto &pt = t->points.data[0];
   size_t n = pt.positions.size < NUM_SERVOS ? pt.positions.size : NUM_SERVOS;
-  Serial.printf("Point 0 has %u speed values (will use %u)\n",
-                (unsigned)pt.positions.size, (unsigned)n);
-
-  // 直接以 positions 欄位當作速度值，持續轉動，直到下一個 callback
+  Serial.printf("Point 0 has %u positions (will use %u)\n", (unsigned)pt.positions.size, (unsigned)n);
+  
   for (size_t i = 0; i < n; i++) {
-    int16_t speed = (int16_t)pt.positions.data[i];
-    Serial.printf("  Servo %u → speed %d\n", (unsigned)(i + 1), speed);
-    setMotorSpeed(i + 1, speed);
+    float angle = (float)pt.positions.data[i];
+    Serial.printf("Moving servo %u to %.2f degrees\n", (unsigned)(i + 1), angle);
+    moveServoDeg(i + 1, angle);
+    delay(10);
   }
 
-  Serial.println("=== Callback Complete: Motors Rotating ===");
+  delay(100);
+  setMotorSpeed(2, 1000);
+  setMotorSpeed(6, -1000);
+  delay(500);
+  setMotorSpeed(2, 0);
+  setMotorSpeed(6, 0);
+  delay(10);
+  
+  Serial.println("=== Callback Complete ===");
 }
 
 void setup() {
@@ -219,14 +234,6 @@ void setup() {
   );
   
   Serial.println("Setup complete, ready to receive trajectory commands");
-  
-  /*
-  //馬達旋轉
-  Serial.println("Setting servo ID 5 to motor mode...");
-    setMotorMode(5, true, 1000);  // 启用motor模式，初始速度为0
-    delay(100);
-    Serial.println("Servo ID 5 is now in motor mode");
-  */
 }
 
 void loop() {
