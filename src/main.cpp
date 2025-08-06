@@ -44,6 +44,24 @@ void enableTorque(uint8_t id) {
   sendPack(id, CMD_LOAD, &on, 1);
 }
 
+// 設置servo為motor模式
+void setMotorMode(uint8_t id, bool enable_motor_mode, int16_t speed = 0) {
+  uint8_t mode = enable_motor_mode ? 1 : 0;
+  uint8_t p[4] = {
+    mode,                    // 參數1: 模式 (0=servo, 1=motor)
+    0,                       // 參數2: null
+    (uint8_t)(speed & 0xFF), // 參數3: 速度低位
+    (uint8_t)(speed >> 8)    // 參數4: 速度高位 (-1000~1000)
+  };
+  sendPack(id, CMD_SERVO_MOTOR_MODE, p, 4);
+}
+
+// 控制馬達速度 (-1000 到 1000)
+void setMotorSpeed(uint8_t id, int16_t speed) {
+  speed = constrain(speed, -1000, 1000);
+  setMotorMode(id, true, speed);
+}
+
 void moveServoDeg(uint8_t id, float deg) {
   deg = constrain(deg, 0.0f, 240.0f);
   uint16_t pos = (uint16_t)(deg / 240.0f * 1000.0f);
