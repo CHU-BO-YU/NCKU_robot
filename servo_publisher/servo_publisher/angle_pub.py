@@ -6,6 +6,24 @@ from typing import List
 
 NUM_SERVOS = 12
 
+import sys
+import select
+import termios
+import tty
+
+def get_key(timeout=0.1):
+    """非阻塞讀取單一鍵，無輸入則回傳 None"""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        rlist, _, _ = select.select([sys.stdin], [], [], timeout)
+        if rlist:
+            return sys.stdin.read(1)
+        return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
 class ServoTrajectoryPublisher(Node):
     def __init__(self):
         super().__init__('servo_trajectory_publisher')
@@ -44,45 +62,43 @@ class ServoTrajectoryPublisher(Node):
             pass
 
     def angle_menu(self, indices: List[int]):
-        ids_str = ", ".join(str(i + 1) for i in indices)
-        prompt = (
-            f'為 舵機 {ids_str} 一次設定相同角度（0–240），或輸入：\n'
-            f'  b 返回\n'
-            f'  u 設定 servo_2=240, servo_6=0\n'
-            f'  j 設定 servo_2=0, servo_6=240\n'
-            f'輸入指令或角度：'
-        )
-
-        while rclpy.ok():
-            inp = input(prompt).strip().lower()
-            if inp == 'b':
-                return
-            elif inp == 'u':
-                self.positions[1] = 240.0  # servo_2（index=1）
-                self.positions[5] = 0.0    # servo_6（index=5）
-                self.publish_joint_trajectory()
-                print("✅ servo_2=240, servo_6=0 已送出")
-                continue
-            elif inp == 'j':
-                self.positions[1] = 0.0
-                self.positions[5] = 240.0
-                self.publish_joint_trajectory()
-                print("✅ servo_2=0, servo_6=240 已送出")
-                continue
-
-            # 原本角度設定流程
-            try:
-                ang = float(inp)
-                if not 0.0 <= ang <= 240.0:
-                    raise ValueError
-            except ValueError:
-                print('❌ 輸入錯誤，請輸入 0–240 角度，或 b/u/j 等指令。')
-                continue
-
-            for i, idx in enumerate(indices):
-                self.positions[idx] = ang if i == 0 else 240.0 - ang
-            self.publish_joint_trajectory()
+        if len(indices) != 2:
+            print("❌ 此功能目前僅支援兩顆舵機控制。請選擇兩個舵機。")
             return
+
+        ids_str = ", ".join(str(i + 1) for i in indices)
+        print(f'🎮 控制舵機 {ids_str}，使用鍵盤 WASD 設定角度，Q 離開')
+
+        try:
+            while rclpy.ok():
+                key = get_key()
+                if key is None:
+                    continue
+
+                key = key.lower()
+                if key == 'w':
+                    self.positions[indices[0]] = 240.0
+                    self.positions[indices[1]] = 0.0
+                    self.publish_joint_trajectory()
+                    print(f"🠕 W：{indices[0]+1}=240, {indices[1]+1}=0")
+                elif key == 'a':
+                    self.positions[indices[0]] = 240.0
+                    self.positions[indices[1]] = 240.0
+                    self.publish_joint_trajectory()
+                    print(f"🠔 A：{indices[0]+1}=240, {indices[1]+1}=240")
+                elif key == 'd':
+                    self.positions[indices[0]] = 0.0
+                    self.positions[indices[1]] = 0.0
+                    self.publish_joint_trajectory()
+                    print(f"🠗 S：{indices[0]+1}=0, {indices[1]+1}=240")
+                elif key == 'q':
+                    print("🚪 離開控制模式")
+                    break
+                else:
+                    continue  # 忽略其他鍵
+
+        except KeyboardInterrupt:
+            print("❗ 中斷輸入")
 
 def main(args=None):
     rclpy.init(args=args)

@@ -100,13 +100,6 @@ void traj_callback(const void * msgin) {
   
   auto *t = (const trajectory_msgs__msg__JointTrajectory *)msgin;
   
-  Serial.printf("Joint names count: %u\n", (unsigned)t->joint_names.size);
-  for (size_t i = 0; i < t->joint_names.size && i < 5; i++) {
-    Serial.printf("Joint[%u]: %s\n", (unsigned)i, t->joint_names.data[i].data);
-  }
-  
-  Serial.printf("Points count: %u\n", (unsigned)t->points.size);
-  
   if (t->points.size == 0) {
     Serial.println("WARNING: No trajectory points received!");
     return;
@@ -114,38 +107,89 @@ void traj_callback(const void * msgin) {
   
   auto &pt = t->points.data[0];
   size_t n = pt.positions.size < NUM_SERVOS ? pt.positions.size : NUM_SERVOS;
-  Serial.printf("Point 0 has %u positions (will use %u)\n", (unsigned)pt.positions.size, (unsigned)n);
   
+  // 步驟1: Servo模式定位
+  Serial.println("Step 1: Servo positioning");
   for (size_t i = 0; i < n; i++) {
     float angle = (float)pt.positions.data[i];
     Serial.printf("Moving servo %u to %.2f degrees\n", (unsigned)(i + 1), angle);
+    
+    setMotorMode(i + 1, false);
+    delay(10);
     moveServoDeg(i + 1, angle);
     delay(10);
   }
-
+  
   // 等待servo移動完成
-  delay(500);
-  
-  // 步驟2: 切換到Motor模式旋轉
-  Serial.println("Step 2: Motor mode rotation");
-  setMotorSpeed(2, 1000);  // 內部會切換到motor模式
-  setMotorSpeed(6, -1000);
-  delay(500);
-  
-  // 停止motor
-  setMotorSpeed(2, 0);
-  setMotorSpeed(6, 0);
   delay(100);
   
-  // 步驟3: 切換回Servo模式定位
-  Serial.println("Step 3: Final servo positioning");
-  setMotorMode(2, false);  // 明確切換回servo模式
-  setMotorMode(6, false);
-  delay(50);
+  // 檢查觸發條件並執行對應動作
+  float data1 = (n > 1) ? (float)pt.positions.data[1] : 0;  // ID2的角度 (index 1)
+  float data2 = (n > 5) ? (float)pt.positions.data[5] : 0;  // ID6的角度 (index 5)
   
-  moveServoDeg(2, 0);    // 修正：統一使用ID2,6
-  moveServoDeg(6, 240);
-  delay(10);
+  Serial.printf("檢查觸發條件: data1(ID2)=%.1f, data2(ID6)=%.1f\n", data1, data2);
+  
+  // 條件1: 數據1是240且數據2是0 - 執行完整序列
+  if (abs(data1 - 240.0) < 1.0 && abs(data2 - 0.0) < 1.0) {
+    Serial.println("觸發條件: ID2=240, ID6=0 -> 執行完整motor序列");
+    
+    Serial.println("Step 2: Motor mode rotation (both)");
+    setMotorSpeed(2, 1000);
+    setMotorSpeed(6, -1000);
+    delay(800);
+    
+    setMotorSpeed(2, 0);
+    setMotorSpeed(6, 0);
+    delay(100);
+    
+    Serial.println("Step 3: Final servo positioning");
+    setMotorMode(2, false);
+    setMotorMode(6, false);
+    delay(50);
+    
+    moveServoDeg(2, 0);
+    moveServoDeg(6, 240);
+    delay(10);
+  }
+  // 條件2: 數據1是0 - 只執行ID6 motor
+  else if (abs(data1 - 0.0) < 1.0) {
+    Serial.println("觸發條件: ID2=0 -> 只執行ID6 motor");
+    
+    Serial.println("Step 2: Motor mode rotation (ID6 only)");
+    setMotorSpeed(6, -1000);
+    delay(800);
+    
+    setMotorSpeed(6, 0);
+    delay(100);
+    
+    Serial.println("Step 3: Final servo positioning (ID6 only)");
+    setMotorMode(6, false);
+    delay(50);
+    
+    moveServoDeg(6, 240);
+    delay(10);
+  }
+  // 條件3: 數據2是240 - 只執行ID2 motor  
+  else if (abs(data2 - 240.0) < 1.0) {
+    Serial.println("觸發條件: ID6=240 -> 只執行ID2 motor");
+    
+    Serial.println("Step 2: Motor mode rotation (ID2 only)");
+    setMotorSpeed(2, 1000);
+    delay(800);
+    
+    setMotorSpeed(2, 0);
+    delay(100);
+    
+    Serial.println("Step 3: Final servo positioning (ID2 only)");
+    setMotorMode(2, false);
+    delay(50);
+    
+    moveServoDeg(2, 0);
+    delay(10);
+  }
+  else {
+    Serial.println("無觸發條件，僅執行servo定位");
+  }
 
   Serial.println("=== Callback Complete ===");
 }
