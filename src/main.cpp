@@ -21,6 +21,7 @@ HardwareSerial BusSerial(2);
 #define HDR      0x55
 #define CMD_MOVE 0x01
 #define CMD_LOAD 0x1F
+#define CMD_SERVO_MOTOR_MODE 0x1D  // 29
 
 uint8_t calcCHK(const uint8_t *b) {
   uint16_t s = 0;
